@@ -11,12 +11,14 @@ using Microsoft.Xna.Framework.Media;
 
 namespace Isometric
 {
+    public enum ViewMode { full, dimmed, cut_roof, cut_front }
+
     public enum TileType { sand, dirt, grass, water, tree, leafs, mountain,
                             plant1, plant2, plant3, stump, plant4, plant5,
                             plant6, plant7, log, bush1, stone1, stone2,
-                            mushroom1, mushroom2, mushroom3, bush2, lilypad1, lilypad2, cactus, desertplant1, desertplant2};
+                            mushroom1, mushroom2, mushroom3, bush2, lilypad1, lilypad2, cactus, desertplant1, desertplant2}
 
-    public enum Action { no_action, drop, dig };
+    public enum Action { no_action, drop, dig }
 
     public class Tile
     {
@@ -49,6 +51,8 @@ namespace Isometric
         Texture2D toolsSprite;
 
         Vector2 toolbarPosition = new Vector2(10, 10);
+
+        ViewMode currentViewMode = ViewMode.full;
 
         Character character;
 
@@ -83,7 +87,7 @@ namespace Isometric
         int terrainMaxHeight = 20;
         int mountainMaxHeight = 30;
 
-        int waterLevel = 4;
+        int waterLevel = 15;
         int baseLevel = 10;
 
         int treeProbability = 200;
@@ -191,7 +195,7 @@ namespace Isometric
                     for (int i = 0; i <= height; i++)
                     {
                         if( !map[x,y].Any(tile => tile.ZPosition == i))
-                            map[x, y].Add(new Tile() { Type = (i < waterLevel) ? TileType.sand : (i == height ? TileType.grass : TileType.dirt), ZPosition = i });
+                            map[x, y].Add(new Tile() { Type = (i <= waterLevel) ? TileType.sand : (i == height ? TileType.grass : TileType.dirt), ZPosition = i });
                     }
                 }
             }
@@ -451,7 +455,12 @@ namespace Isometric
 
             if (keyboardState.IsKeyDown(Keys.Tab) && previousKeyboardState.IsKeyUp(Keys.Tab))
             {
-                cutRoof = !cutRoof;
+                var newViewMode = (int)currentViewMode + 1;
+
+                if (newViewMode > Enum.GetNames(typeof(ViewMode)).Count())
+                    newViewMode = 0;
+
+                currentViewMode = (ViewMode)newViewMode;
             }
 
             #endregion scroll
@@ -761,13 +770,16 @@ namespace Isometric
 
                         var transparency = tileProperies[tile.Type].Transparency;
 
-                        if (cutRoof && tile.ZPosition > character.Position.Z)
+                        if (currentViewMode == ViewMode.cut_front && x > character.Position.X && y > character.Position.Y)
                             transparency = 0.0f;
 
-                        if (cutRoof && tile.ZPosition > character.Position.Z && tile.ZPosition < character.Position.Z + 2)
+                        if ((currentViewMode == ViewMode.cut_roof || currentViewMode == ViewMode.dimmed) && tile.ZPosition > character.Position.Z)
+                            transparency = 0.0f;
+
+                        if (currentViewMode == ViewMode.dimmed && tile.ZPosition > character.Position.Z && tile.ZPosition < character.Position.Z + 2)
                             transparency = 0.6f;
 
-                        if (cutRoof && tile.ZPosition > character.Position.Z + 1 && tile.ZPosition < character.Position.Z + 3)
+                        if (currentViewMode == ViewMode.dimmed && tile.ZPosition > character.Position.Z + 1 && tile.ZPosition < character.Position.Z + 3)
                             transparency = 0.3f;
 
                         spriteBatch.Draw(tileSprites, startPoint + position, new Rectangle(spriteXOffset, spriteYOffset, tileWidth, tileHeight), Color.White * transparency);
