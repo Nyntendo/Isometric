@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Microsoft.Xna.Framework;
+using Isometric.Common;
 
 namespace Isometric
 {
@@ -21,8 +22,8 @@ namespace Isometric
         public int JumpHeight { get; set; }
         public double JumpTimer { get; set; }
         public double JumpDuration { get; set; }
-        public Action ActiveAction { get; set; }
-        public Action LastAction { get; set; }
+        public Common.Action ActiveAction { get; set; }
+        public Common.Action LastAction { get; set; }
         public TileType? CarryingTile { get; set; }
         public double ActionTimer { get; set; }
 
@@ -40,8 +41,8 @@ namespace Isometric
             JumpHeight = 2;
             JumpTimer = 0.0f;
             JumpDuration = 500.0f;
-            ActiveAction = Action.dig;
-            LastAction = Action.no_action;
+            ActiveAction = Common.Action.dig;
+            LastAction = Common.Action.no_action;
             CarryingTile = null;
             ActionTimer = 0.0f;
         }

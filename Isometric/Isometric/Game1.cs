@@ -8,42 +8,22 @@ using Microsoft.Xna.Framework.GamerServices;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Microsoft.Xna.Framework.Media;
+using Isometric.Common;
+using Isometric.WorldGeneration;
 
 namespace Isometric
 {
     public enum ViewMode { full, dimmed, cut_roof, cut_front }
 
-    public enum TileType { sand, dirt, grass, water, tree, leafs, mountain,
-                            plant1, plant2, plant3, stump, plant4, plant5,
-                            plant6, plant7, log, bush1, stone1, stone2,
-                            mushroom1, mushroom2, mushroom3, bush2, lilypad1, lilypad2, cactus, desertplant1, desertplant2}
-
-    public enum Action { no_action, drop, dig }
-
-    public class Tile
-    {
-        public TileType Type { get; set; }
-        public int ZPosition { get; set; }
-        public bool Visible { get; set; }
-    }
-
-    public struct TileProperty
-    {
-        public bool IsBlock { get; set; }
-        public bool Passable { get; set; }
-        public float Transparency { get; set; }
-        public bool Diggable { get; set; }
-    }
-
-    public struct ActionProperty
-    {
-        public double Duration { get; set; }
-    }
-
     public class Game1 : Microsoft.Xna.Framework.Game
     {
-        GraphicsDeviceManager graphics;
-        SpriteBatch spriteBatch;
+        private GraphicsDeviceManager graphics;
+        private SpriteBatch spriteBatch;
+
+        private WorldGenerator _worldGenerator;
+
+        private int _mapWidth;
+        private int _mapHeight;
 
         Texture2D tileSprites;
         Texture2D charSprite;
@@ -56,8 +36,6 @@ namespace Isometric
 
         Character character;
 
-        bool cutRoof = false;
-
         Random rand;
 
         int tilesPerRow = 7;
@@ -69,29 +47,9 @@ namespace Isometric
         int isoHeight = 17;
         int isoZHeight = 19;
 
-        Dictionary<TileType, TileProperty> tileProperies;
-
-        Dictionary<Action, ActionProperty> actionProperties;
-
         Vector2 startPoint = new Vector2(400, 100);
 
-        int mapSize = 150;
         List<Tile>[,] map;
-
-        PerlinGenerator heightPerlin;
-        PerlinGenerator mountainPerlin;
-
-        float terrainNoisiness = 4.0f;
-        float mountainNoisiness = 10.0f;
-
-        int terrainMaxHeight = 20;
-        int mountainMaxHeight = 30;
-
-        int waterLevel = 15;
-        int baseLevel = 10;
-
-        int treeProbability = 200;
-        int plantProbability = 50;
 
         KeyboardState keyboardState, previousKeyboardState;
 
@@ -105,8 +63,9 @@ namespace Isometric
 
             rand = new Random();
 
-            heightPerlin = new PerlinGenerator(rand.Next(0,Int32.MaxValue));
-            mountainPerlin = new PerlinGenerator(rand.Next(0, Int32.MaxValue));
+            _worldGenerator = new WorldGenerator();
+            _mapWidth = _worldGenerator.MapWidth;
+            _mapHeight = _worldGenerator.MapHeight;
         }
 
         protected override void Initialize()
@@ -123,41 +82,6 @@ namespace Isometric
             toolbarSprite = Content.Load<Texture2D>("toolbar");
             toolsSprite = Content.Load<Texture2D>("tools");
 
-            tileProperies = new Dictionary<TileType, TileProperty>();
-
-            List<TileType> passableTiles = new List<TileType>(new TileType[] {TileType.water, TileType.plant1, TileType.plant2, TileType.plant3, TileType.plant4, TileType.plant5, TileType.plant6, TileType.plant7, TileType.stump, TileType.log, TileType.mushroom1, TileType.mushroom2, TileType.mushroom3, TileType.lilypad1, TileType.lilypad2, TileType.desertplant1, TileType.desertplant2});
-            List<TileType> diggableTiles = new List<TileType>(new TileType[] { TileType.dirt, TileType.sand, TileType.grass });
-            List<TileType> blockTiles = new List<TileType>(new TileType[] { TileType.sand, TileType.dirt, TileType.grass, TileType.water, TileType.mountain });
-
-            for (int i = 0; i < Enum.GetNames(typeof(TileType)).Count(); i++)
-            {
-                var passable = false;
-                var diggable = false;
-                var transparency = 1.0f;
-                var isBlock = false;
-
-                if (passableTiles.Contains((TileType)i))
-                    passable = true;
-
-                if (diggableTiles.Contains((TileType)i))
-                    diggable = true;
-
-                if ((TileType)i == TileType.water)
-                    transparency = 0.2f;
-
-                if (blockTiles.Contains((TileType)i))
-                    isBlock = true;
-
-                tileProperies.Add((TileType)i, new TileProperty() { Passable = passable, Transparency = transparency, Diggable = diggable, IsBlock = isBlock });
-            }
-
-            actionProperties = new Dictionary<Action, ActionProperty>();
-
-            for (int i = 0; i < Enum.GetNames(typeof(Action)).Count(); i++)
-            {
-                actionProperties.Add((Action)i, new ActionProperty() { Duration = 1.0f });
-            }
-
             character = new Character(new Vector3(0, 0, 0));
 
             GenerateMap();
@@ -167,160 +91,12 @@ namespace Isometric
 
         private void GenerateMap()
         {
-            map = new List<Tile>[mapSize, mapSize];
-
-            //generate mountains
-            for (int x = 0; x < mapSize; x++)
-            {
-                for (int y = 0; y < mapSize; y++)
-                {
-                    map[x, y] = new List<Tile>();
-
-                    int height = (int)Math.Round((mountainPerlin.Noise(mountainNoisiness * x / (float)mapSize, mountainNoisiness * y / (float)mapSize, 0) + 0.5f) * mountainMaxHeight);
-
-                    for (int i = 0; i <= height; i++)
-                    {
-                        map[x, y].Add(new Tile() { Type = TileType.mountain, ZPosition = i });
-                    }
-                }
-            }
-
-            // Generate land
-            for (int x = 0; x < mapSize; x++)
-            {
-                for (int y = 0; y < mapSize; y++)
-                {
-                    int height = baseLevel + (int)Math.Round((heightPerlin.Noise(terrainNoisiness * x / (float)mapSize, terrainNoisiness * y / (float)mapSize, 0) + 0.5f) * terrainMaxHeight);
-
-                    for (int i = 0; i <= height; i++)
-                    {
-                        if( !map[x,y].Any(tile => tile.ZPosition == i))
-                            map[x, y].Add(new Tile() { Type = (i <= waterLevel) ? TileType.sand : (i == height ? TileType.grass : TileType.dirt), ZPosition = i });
-                    }
-                }
-            }
-
-            // Generate water
-            for (int x = 0; x < mapSize; x++)
-            {
-                for (int y = 0; y < mapSize; y++)
-                {
-                    while (map[x, y].OrderBy(tileHeight => tileHeight.ZPosition).Last().ZPosition < waterLevel)
-                    {
-                        map[x, y].Add(new Tile() { Type = TileType.water, ZPosition = map[x, y].Last().ZPosition + 1 });
-                    }
-                }
-            }
-
-            // Generate trees
-            for (int x = 0; x < mapSize; x++)
-            {
-                for (int y = 0; y < mapSize; y++)
-                {
-                    if (map[x, y].Last().Type == TileType.grass && rand.Next(0, treeProbability) == 0)
-                    {
-                        GenerateTree(x, y, map[x, y].Last().ZPosition);
-                    }
-                }
-
-            }
-
-            // Generate plants
-            for (int x = 0; x < mapSize; x++)
-            {
-                for (int y = 0; y < mapSize; y++)
-                {
-                    var topTile = map[x, y].Where(tile => tile.Type != TileType.leafs).Last();
-
-                    if (topTile.Type == TileType.grass && rand.Next(0, plantProbability) == 0)
-                    {
-                        var tileType = (TileType)rand.Next((int)TileType.plant1, (int)TileType.bush2 + 1);
-                        map[x, y].Add(new Tile() { Type = tileType, ZPosition = topTile.ZPosition + 1 });
-                    }
-
-                    if (topTile.Type == TileType.water && rand.Next(0, plantProbability) == 0)
-                    {
-                        var tileType = (TileType)rand.Next((int)TileType.lilypad1, (int)TileType.lilypad2 + 1);
-                        map[x, y].Add(new Tile() { Type = tileType, ZPosition = topTile.ZPosition + 1 });
-                    }
-
-                    if (topTile.Type == TileType.sand && rand.Next(0, plantProbability) == 0)
-                    {
-                        var tileType = (TileType)rand.Next((int)TileType.cactus, (int)TileType.desertplant2 + 1);
-                        map[x, y].Add(new Tile() { Type = tileType, ZPosition = topTile.ZPosition + 1 });
-                    }
-                }
-            }
-
-
-            // Hide hidden tiles
-            for (int x = 0; x < mapSize; x++)
-            {
-                for (int y = 0; y < mapSize; y++)
-                {
-                    foreach (Tile tile in map[x, y])
-                    {
-                        if (IsHidden(x, y, tile.ZPosition) && tileProperies[tile.Type].Transparency == 1.0f)
-                            tile.Visible = false;
-                        else
-                            tile.Visible = true;
-                    }
-                }
-            }
+            map = _worldGenerator.GenerateWorld();
 
             if(character != null)
-                character.Position = new Vector3(character.Position.X, character.Position.Y, map[(int)character.Position.X, (int)character.Position.Y].Where(tile => tile.Type != TileType.water).OrderBy(tile => tile.ZPosition).Last().ZPosition + 1);
+                character.Position = new Vector3(character.Position.X, character.Position.Y, map[(int)character.Position.X, (int)character.Position.Y].Where(tile => tile.Type != TileType.water && tile.Type != TileType.leafs).OrderBy(tile => tile.ZPosition).Last().ZPosition + 1);
         }
-
-        private bool IsHidden(int x, int y, int z)
-        {
-            var isHidden = true;
-            
-            if (x < mapSize - 1)
-                isHidden = isHidden && map[x + 1, y].Any(tile => tile.ZPosition == z && tileProperies[tile.Type].Transparency == 1.0f && tileProperies[tile.Type].IsBlock);
-
-            if (x > 0)
-                isHidden = isHidden && map[x - 1, y].Any(tile => tile.ZPosition == z && tileProperies[tile.Type].Transparency == 1.0f && tileProperies[tile.Type].IsBlock);
-
-            if (y < mapSize - 1)
-                isHidden = isHidden && map[x, y + 1].Any(tile => tile.ZPosition == z && tileProperies[tile.Type].Transparency == 1.0f && tileProperies[tile.Type].IsBlock);
-
-            if (y > 0)
-                isHidden = isHidden && map[x, y - 1].Any(tile => tile.ZPosition == z && tileProperies[tile.Type].Transparency == 1.0f && tileProperies[tile.Type].IsBlock);
-
-            isHidden = isHidden && map[x, y].Any(tile => tile.ZPosition == z + 1 && tileProperies[tile.Type].Transparency == 1.0f && tileProperies[tile.Type].IsBlock);
-
-            return isHidden;
-        }
-
-        private void GenerateTree(int x, int y, int z)
-        {
-            Vector3[] crownCoords = { new Vector3(0,0,0), new Vector3(0,1,0), new Vector3(0,-1,0), new Vector3(1,0,0), new Vector3(-1,0,0),
-                                      new Vector3(1,1,1), new Vector3(1,0,1), new Vector3(1,-1,1), new Vector3(0,1,1), new Vector3(0,0,1), new Vector3(0,-1,1), new Vector3(-1,1,1), new Vector3(-1,0,1), new Vector3(-1,-1,1), new Vector3(0,2,1), new Vector3(0,-2,1), new Vector3(2,0,1), new Vector3(-2,0,1),
-                                      new Vector3(0,0,2), new Vector3(0,1,2), new Vector3(0,-1,2), new Vector3(1,0,2), new Vector3(-1,0,2),
-                                      new Vector3(0,0,3)};
-
-            var treeHeight = rand.Next(3, 9);
-
-            //trunk
-
-            for (int i = 0; i < treeHeight; i++)
-            {
-                map[x, y].Add(new Tile() { Type = TileType.tree, ZPosition = z + i + 1 });
-            }
-
-            //crown
-
-            foreach (Vector3 coord in crownCoords)
-            {
-                var cx = x + (int)coord.X;
-                var cy = y + (int)coord.Y;
-                var cz = z + treeHeight + (int)coord.Z + 1;
-                
-                if (IsWithinMap(cx,cy))
-                    map[cx, cy].Add(new Tile() { Type = TileType.leafs, ZPosition = cz });
-            }
-        }
+        
 
         protected override void UnloadContent()
         {
@@ -340,92 +116,91 @@ namespace Isometric
 
             if (keyboardState.IsKeyDown(Keys.F5) && previousKeyboardState.IsKeyUp(Keys.F5))
             {
-                heightPerlin = new PerlinGenerator(rand.Next(0, Int32.MaxValue));
-                mountainPerlin = new PerlinGenerator(rand.Next(0, Int32.MaxValue));
+                _worldGenerator.ReSeed();
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.Add) && previousKeyboardState.IsKeyUp(Keys.Add))
             {
-                terrainNoisiness += 1.0f;
+                _worldGenerator.TerrainNoisiness += 1.0f;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.Subtract) && previousKeyboardState.IsKeyUp(Keys.Subtract))
             {
-                terrainNoisiness -= 1.0f;
+                _worldGenerator.TerrainNoisiness -= 1.0f;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.W) && previousKeyboardState.IsKeyUp(Keys.W))
             {
-                baseLevel += 1;
+                _worldGenerator.BaseLevel += 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.S) && previousKeyboardState.IsKeyUp(Keys.S))
             {
-                baseLevel -= 1;
+                _worldGenerator.BaseLevel -= 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.Q) && previousKeyboardState.IsKeyUp(Keys.Q))
             {
-                waterLevel += 1;
+                _worldGenerator.WaterLevel += 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.A) && previousKeyboardState.IsKeyUp(Keys.A))
             {
-                waterLevel -= 1;
+                _worldGenerator.WaterLevel -= 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.E) && previousKeyboardState.IsKeyUp(Keys.E))
             {
-                terrainMaxHeight += 1;
+                _worldGenerator.TerrainMaxHeight += 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.D) && previousKeyboardState.IsKeyUp(Keys.D))
             {
-                terrainMaxHeight -= 1;
+                _worldGenerator.TerrainMaxHeight -= 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.R) && previousKeyboardState.IsKeyUp(Keys.R))
             {
-                treeProbability -= 5;
+                _worldGenerator.TreeProbability -= 5;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.F) && previousKeyboardState.IsKeyUp(Keys.F))
             {
-                treeProbability += 5;
+                _worldGenerator.TreeProbability += 5;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.T) && previousKeyboardState.IsKeyUp(Keys.T))
             {
-                mountainMaxHeight += 1;
+                _worldGenerator.MountainMaxHeight += 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.G) && previousKeyboardState.IsKeyUp(Keys.G))
             {
-                mountainMaxHeight -= 1;
+                _worldGenerator.MountainMaxHeight -= 1;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.Y) && previousKeyboardState.IsKeyUp(Keys.Y))
             {
-                mountainNoisiness += 1.0f;
+                _worldGenerator.MountainNoisiness += 1.0f;
                 GenerateMap();
             }
 
             if (keyboardState.IsKeyDown(Keys.H) && previousKeyboardState.IsKeyUp(Keys.H))
             {
-                mountainNoisiness -= 1.0f;
+                _worldGenerator.MountainNoisiness -= 1.0f;
                 GenerateMap();
             }
 
@@ -466,12 +241,14 @@ namespace Isometric
             #endregion scroll
 
             #region movement
+
+            //TODO: Break out the logic here
             if (keyboardState.IsKeyDown(Keys.Up) && character.MoveTimer == 0 && character.ActionTimer == 0)
             {
                 character.Direction = Direction.north;
-                if (IsWithinMap((int)character.Position.X, (int)character.Position.Y - 1) && keyboardState.IsKeyUp(Keys.LeftShift))
+                if (Tools.IsWithinMap((int)character.Position.X, (int)character.Position.Y - 1, _mapWidth, _mapHeight) && keyboardState.IsKeyUp(Keys.LeftShift))
                 {
-                    var tileCollection = map[(int)character.Position.X, (int)character.Position.Y - 1].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && tileProperies[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
+                    var tileCollection = map[(int)character.Position.X, (int)character.Position.Y - 1].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && Configuration.TileProperties[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
 
                     if (tileCollection.Count() > 0 && tileCollection.Last().ZPosition != character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1))
                     {
@@ -484,9 +261,9 @@ namespace Isometric
             if (keyboardState.IsKeyDown(Keys.Down) && character.MoveTimer == 0 && character.ActionTimer == 0)
             {
                 character.Direction = Direction.south;
-                if (IsWithinMap((int)character.Position.X, (int)character.Position.Y + 1) && keyboardState.IsKeyUp(Keys.LeftShift))
+                if (Tools.IsWithinMap((int)character.Position.X, (int)character.Position.Y + 1, _mapWidth, _mapHeight) && keyboardState.IsKeyUp(Keys.LeftShift))
                 {
-                    var tileCollection = map[(int)character.Position.X, (int)character.Position.Y + 1].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && tileProperies[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
+                    var tileCollection = map[(int)character.Position.X, (int)character.Position.Y + 1].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && Configuration.TileProperties[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
 
                     if (tileCollection.Count() > 0 && tileCollection.Last().ZPosition != character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1))
                     {
@@ -499,9 +276,9 @@ namespace Isometric
             if (keyboardState.IsKeyDown(Keys.Left) && character.MoveTimer == 0 && character.ActionTimer == 0)
             {
                 character.Direction = Direction.west;
-                if (IsWithinMap((int)character.Position.X - 1, (int)character.Position.Y) && keyboardState.IsKeyUp(Keys.LeftShift))
+                if (Tools.IsWithinMap((int)character.Position.X - 1, (int)character.Position.Y, _mapWidth, _mapHeight) && keyboardState.IsKeyUp(Keys.LeftShift))
                 {
-                    var tileCollection = map[(int)character.Position.X - 1, (int)character.Position.Y].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && tileProperies[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
+                    var tileCollection = map[(int)character.Position.X - 1, (int)character.Position.Y].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && Configuration.TileProperties[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
 
                     if (tileCollection.Count() > 0 && tileCollection.Last().ZPosition != character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1))
                     {
@@ -514,9 +291,9 @@ namespace Isometric
             if (keyboardState.IsKeyDown(Keys.Right) && character.MoveTimer == 0 && character.ActionTimer == 0)
             {
                 character.Direction = Direction.east;
-                if (IsWithinMap((int)character.Position.X + 1, (int)character.Position.Y) && keyboardState.IsKeyUp(Keys.LeftShift))
+                if (Tools.IsWithinMap((int)character.Position.X + 1, (int)character.Position.Y, _mapWidth, _mapHeight) && keyboardState.IsKeyUp(Keys.LeftShift))
                 {
-                    var tileCollection = map[(int)character.Position.X + 1, (int)character.Position.Y].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && tileProperies[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
+                    var tileCollection = map[(int)character.Position.X + 1, (int)character.Position.Y].Where(tile => tile.ZPosition <= character.Position.Z + ((character.Jumping) ? character.JumpHeight : 1) && Configuration.TileProperties[tile.Type].Passable == false).OrderBy(tile => tile.ZPosition);
 
                     if (tileCollection.Count() > 0 && tileCollection.Last().ZPosition != character.Position.Z + ((character.Jumping)?character.JumpHeight:1))
                     {
@@ -533,7 +310,7 @@ namespace Isometric
 
             if (keyboardState.IsKeyDown(Keys.LeftControl) && previousKeyboardState.IsKeyUp(Keys.LeftControl) && character.ActionTimer == 0)
             {
-                character.ActionTimer = actionProperties[character.ActiveAction].Duration;
+                character.ActionTimer = Configuration.ActionProperties[character.ActiveAction].Duration;
             }
 
             #endregion movement
@@ -628,7 +405,7 @@ namespace Isometric
 
                     if (character.CarryingTile != null)
                     {
-                        character.ActiveAction = Action.drop;
+                        character.ActiveAction = Common.Action.drop;
                     }
                     else
                     {
@@ -647,7 +424,7 @@ namespace Isometric
         {
             switch (character.ActiveAction)
             {
-                case Action.drop:
+                case Common.Action.drop:
                     {
                         if (character.CarryingTile.HasValue)
                         {
@@ -665,9 +442,9 @@ namespace Isometric
                         }
                     }
                     break;
-                case Action.dig:
+                case Common.Action.dig:
                     {
-                        character.LastAction = Action.dig;
+                        character.LastAction = Common.Action.dig;
 
                         int digX = (int)character.Position.X + (character.Direction == Direction.east ? 1 : 0) - (character.Direction == Direction.west ? 1 : 0);
                         int digY = (int)character.Position.Y + (character.Direction == Direction.south ? 1 : 0) - (character.Direction == Direction.north ? 1 : 0);
@@ -681,7 +458,7 @@ namespace Isometric
                         {
                             var tile = tileCollection.First();
 
-                            if (tileProperies[tile.Type].Diggable)
+                            if (Configuration.TileProperties[tile.Type].Diggable)
                             {
                                 var digZ = tile.ZPosition;
                                 map[digX, digY].Remove(tile);
@@ -691,13 +468,14 @@ namespace Isometric
                         }
                     }
                     break;
-                case Action.no_action:
+                case Common.Action.no_action:
                 default:
 
                     break;
             }
         }
 
+        //Move to server
         private void ShowHiddenNeighbors(int x, int y, int z)
         {
             IEnumerable<Tile> neighborCollection;
@@ -709,7 +487,7 @@ namespace Isometric
                     neighborCollection.First().Visible = true;
             }
 
-            if (x < mapSize - 1)
+            if (x < _mapWidth - 1)
             {
                 neighborCollection = map[x + 1, y].Where(tile => tile.ZPosition == z);
                 if (neighborCollection.Any())
@@ -723,7 +501,7 @@ namespace Isometric
                     neighborCollection.First().Visible = true;
             }
 
-            if (y < mapSize - 1)
+            if (y < _mapHeight - 1)
             {
                 neighborCollection = map[x, y + 1].Where(tile => tile.ZPosition == z);
                 if (neighborCollection.Any())
@@ -739,10 +517,7 @@ namespace Isometric
                 neighborCollection.First().Visible = true;
         }
 
-        private bool IsWithinMap(int x, int y)
-        {
-            return x >= 0 && y >= 0 && x < mapSize && y < mapSize;
-        }
+        
 
         protected override void Draw(GameTime gameTime)
         {
@@ -750,9 +525,9 @@ namespace Isometric
 
             spriteBatch.Begin();
 
-            for (int x = 0; x < mapSize; x++)
+            for (int x = 0; x < _mapWidth; x++)
             {
-                for (int y = 0; y < mapSize; y++)
+                for (int y = 0; y < _mapHeight; y++)
                 {
                     foreach(Tile tile in map[x,y].Where(tile => tile.Visible).OrderBy(tile => tile.ZPosition)) {
 
@@ -768,7 +543,7 @@ namespace Isometric
 
                         Vector2 position = new Vector2(isoX, isoY);
 
-                        var transparency = tileProperies[tile.Type].Transparency;
+                        var transparency = Configuration.TileProperties[tile.Type].Transparency;
 
                         if (currentViewMode == ViewMode.cut_front && x > character.Position.X && y > character.Position.Y)
                             transparency = 0.0f;
@@ -813,14 +588,14 @@ namespace Isometric
 
             spriteBatch.Draw(toolbarSprite, toolbarPosition, Color.White);
 
-            if (character.ActiveAction == Action.drop && character.CarryingTile != null)
+            if (character.ActiveAction == Common.Action.drop && character.CarryingTile != null)
             {
                 int spriteXOffset = ((int)character.CarryingTile % 6) * tileWidth;
                 int spriteYOffset = (int)character.CarryingTile / 6 * tileHeight;
 
                 spriteBatch.Draw(tileSprites, toolbarPosition + new Vector2(10,9), new Rectangle(spriteXOffset, spriteYOffset, tileWidth, tileHeight), Color.White);
             }
-            else if (character.ActiveAction == Action.dig)
+            else if (character.ActiveAction == Common.Action.dig)
             {
                 spriteBatch.Draw(toolsSprite, toolbarPosition + new Vector2(16, 15), new Rectangle(0, 0, 24, 24), Color.White);
             }
